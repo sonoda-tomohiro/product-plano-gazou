@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商品画像キャプチャ → PNG変換ツール</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --border: #d9dde3;
+    --accent: #2f6fed;
+    --accent-hover: #1f56c9;
+    --text: #22262b;
+    --text-muted: #6b7280;
+    --danger: #d64545;
+    --slot-empty: #f0f2f5;
+    --slot-filled: #e7f1ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; }
+
+  .panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+  }
+  .panel h2 { font-size: 15px; margin: 0 0 10px; }
+
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    font-family: inherit;
+    font-size: 13px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    resize: vertical;
+  }
+
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+
+  button {
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: #fff;
+    cursor: pointer;
+  }
+  button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+  button.primary:hover { background: var(--accent-hover); }
+  button.primary:disabled {
+    background: #b9c6e0;
+    border-color: #b9c6e0;
+    cursor: not-allowed;
+  }
+  button.ghost { background: transparent; border-color: transparent; color: var(--danger); padding: 2px 6px; font-size: 12px; }
+
+  .status {
+    font-size: 12.5px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .status.ok { background: #e6f4ea; color: #1e7a34; }
+  .status.err { background: #fdeaea; color: #b3261e; }
+  .status.loading { background: #eef1f5; color: var(--text-muted); }
+
+  .error-box {
+    background: #fdeaea;
+    color: #b3261e;
+    border: 1px solid #f3b9b6;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin-top: 10px;
+    display: none;
+  }
+
+  .cards { display: flex; flex-direction: column; gap: 14px; }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .card-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .card-jan { font-weight: 700; font-size: 14px; }
+  .card-name { font-size: 13px; color: var(--text); }
+  .card-name.unknown { color: var(--text-muted); font-style: italic; }
+
+  .slots { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 10px; }
+  .slot {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    background: var(--slot-empty);
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    cursor: pointer;
+    outline: none;
+    padding: 6px;
+    text-align: center;
+  }
+  .slot:focus { border-color: var(--accent); }
+  .slot.filled { border-style: solid; background: var(--slot-filled); }
+  .slot-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+  .slot img { max-width: 100%; max-height: 60px; border-radius: 4px; }
+  .slot .hint { font-size: 10.5px; color: var(--text-muted); }
+  .slot .clear-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    background: rgba(255,255,255,0.9);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 11px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .slot .paste-flash { animation: flash 0.4s; }
+  @keyframes flash { 0% { background: #fff3b0; } 100% { background: var(--slot-filled); } }
+
+  footer { margin-top: 24px; }
+</style>
+</head>
+<body>
+
+<h1>商品画像キャプチャ → PNG変換ツール</h1>
+<div class="sub">JANコードを貼り付け、各商品の画像（正面・右・左・上・底・背面）をコピー&amp;ペーストしてZIPでダウンロードします。</div>
+
+<div class="panel" id="masterPanel">
+  <h2>商品マスタ</h2>
+  <span id="masterStatus" class="status loading">読み込み中...</span>
+</div>
+
+<div class="panel">
+  <h2>1. JANコードを貼り付け</h2>
+  <textarea id="janInput" placeholder="JANコードを改行区切りで貼り付けてください（最大20件）&#10;例:&#10;4901234567894&#10;4909876543210"></textarea>
+  <div class="row">
+    <button class="primary" id="loadBtn">読み込み</button>
+    <span id="janCount" class="status" style="background:#eef1f5;color:#555;"></span>
+  </div>
+  <div class="error-box" id="janError"></div>
+</div>
+
+<div class="panel" id="cardsPanel" style="display:none;">
+  <h2>2. 画像を貼り付け（クリックしてCtrl+V）</h2>
+  <div class="cards" id="cards"></div>
+  <div class="row" style="margin-top:16px;">
+    <button class="primary" id="downloadBtn" disabled>ダウンロード（ZIP）</button>
+    <span id="downloadStatus" class="status" style="background:#eef1f5;color:#555;"></span>
+  </div>
+</div>
+
+<footer class="sub">正面のみでも登録可能です。ファイル名は「JANコード_番号.png」（1=正面, 2=上面, 3=右面, 20=背面, 21=底面, 22=左面）です。</footer>
+
+<script>
+const MASTER_URL = "https://sonoda-tomohiro.github.io/product-plano-gazou/master.json";
+const MAX_PRODUCTS = 20;
+const SLOT_DEFS = [
+  { no: 1, label: "正面" },
+  { no: 2, label: "上面" },
+  { no: 3, label: "右面" },
+  { no: 20, label: "背面" },
+  { no: 21, label: "底面" },
+  { no: 22, label: "左面" },
+];
+
+let masterMap = null; // normalized jan -> name
+let products = {};     // jan(raw input) -> { name, slots: { 1: blob, ... } }
+
+function normalizeJan(jan) {
+  const digits = jan.replace(/\D/g, "");
+  const stripped = digits.replace(/^0+/, "");
+  return stripped.length ? stripped : "0";
+}
+
+async function loadMaster() {
+  const statusEl = document.getElementById("masterStatus");
+  try {
+    const res = await fetch(MASTER_URL);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    masterMap = data.products || {};
+    statusEl.textContent = `読み込み完了（${data.count ?? Object.keys(masterMap).length}件 / 更新: ${data.generated_at ?? "不明"}）`;
+    statusEl.className = "status ok";
+  } catch (e) {
+    masterMap = {};
+    statusEl.textContent = "商品マスタの取得に失敗しました（商品名は表示されません。画像登録は可能です）";
+    statusEl.className = "status err";
+  }
+}
+loadMaster();
+
+document.getElementById("loadBtn").addEventListener("click", () => {
+  const raw = document.getElementById("janInput").value;
+  const errorBox = document.getElementById("janError");
+  errorBox.style.display = "none";
+
+  const lines = raw.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+  const uniqueJans = [...new Set(lines)];
+
+  if (uniqueJans.length === 0) {
+    errorBox.textContent = "JANコードを1件以上入力してください。";
+    errorBox.style.display = "block";
+    return;
+  }
+  if (uniqueJans.length > MAX_PRODUCTS) {
+    errorBox.textContent = `同時登録は${MAX_PRODUCTS}件までです。現在${uniqueJans.length}件（重複除去後）あります。件数を減らして再度読み込んでください。`;
+    errorBox.style.display = "block";
+    return;
+  }
+
+  const dupCount = lines.length - uniqueJans.length;
+  document.getElementById("janCount").textContent =
+    `${uniqueJans.length}件を読み込みました${dupCount > 0 ? `（重複${dupCount}件を除去）` : ""}`;
+
+  buildCards(uniqueJans);
+});
+
+function buildCards(jans) {
+  products = {};
+  const cardsEl = document.getElementById("cards");
+  cardsEl.innerHTML = "";
+
+  jans.forEach(jan => {
+    const norm = normalizeJan(jan);
+    const name = masterMap && masterMap[norm] ? masterMap[norm] : null;
+    products[jan] = { name, slots: {} };
+
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const head = document.createElement("div");
+    head.className = "card-head";
+    head.innerHTML = `
+      <span class="card-jan">${escapeHtml(jan)}</span>
+      <span class="card-name ${name ? "" : "unknown"}">${name ? escapeHtml(name) : "商品名不明"}</span>
+    `;
+    card.appendChild(head);
+
+    const slotsEl = document.createElement("div");
+    slotsEl.className = "slots";
+
+    SLOT_DEFS.forEach(def => {
+      const slot = document.createElement("div");
+      slot.className = "slot";
+      slot.tabIndex = 0;
+      slot.dataset.jan = jan;
+      slot.dataset.slotNo = def.no;
+      slot.innerHTML = `<div class="hint">クリックしてCtrl+V</div><div class="slot-label">${def.no}: ${def.label}</div>`;
+      slot.addEventListener("paste", onSlotPaste);
+      slotsEl.appendChild(slot);
+    });
+
+    card.appendChild(slotsEl);
+    cardsEl.appendChild(card);
+  });
+
+  document.getElementById("cardsPanel").style.display = "block";
+  updateDownloadButton();
+}
+
+function onSlotPaste(e) {
+  e.preventDefault();
+  const slot = e.currentTarget;
+  const items = (e.clipboardData || window.clipboardData).items;
+  let imageItem = null;
+  for (const item of items) {
+    if (item.type && item.type.startsWith("image/")) { imageItem = item; break; }
+  }
+  if (!imageItem) {
+    showSlotMessage(slot, "画像ではないデータが貼り付けられました", true);
+    return;
+  }
+  const file = imageItem.getAsFile();
+  const img = new Image();
+  const objUrl = URL.createObjectURL(file);
+  img.onload = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    canvas.toBlob(blob => {
+      const jan = slot.dataset.jan;
+      const slotNo = slot.dataset.slotNo;
+      products[jan].slots[slotNo] = blob;
+      renderFilledSlot(slot, blob);
+      updateDownloadButton();
+      URL.revokeObjectURL(objUrl);
+    }, "image/png");
+  };
+  img.onerror = () => {
+    showSlotMessage(slot, "画像の読み込みに失敗しました", true);
+    URL.revokeObjectURL(objUrl);
+  };
+  img.src = objUrl;
+}
+
+function renderFilledSlot(slot, blob) {
+  const def = SLOT_DEFS.find(d => d.no == slot.dataset.slotNo);
+  const url = URL.createObjectURL(blob);
+  slot.className = "slot filled paste-flash";
+  slot.innerHTML = `
+    <div class="clear-btn" title="削除">×</div>
+    <img src="${url}">
+    <div class="slot-label">${def.no}: ${def.label}</div>
+  `;
+  slot.querySelector(".clear-btn").addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const jan = slot.dataset.jan;
+    const slotNo = slot.dataset.slotNo;
+    delete products[jan].slots[slotNo];
+    slot.className = "slot";
+    slot.innerHTML = `<div class="hint">クリックしてCtrl+V</div><div class="slot-label">${def.no}: ${def.label}</div>`;
+    updateDownloadButton();
+  });
+}
+
+function showSlotMessage(slot, msg, isError) {
+  const original = slot.innerHTML;
+  slot.innerHTML = `<div class="hint" style="color:${isError ? "#b3261e" : "#555"};">${escapeHtml(msg)}</div>`;
+  setTimeout(() => {
+    if (!slot.classList.contains("filled")) slot.innerHTML = original;
+  }, 2200);
+}
+
+function updateDownloadButton() {
+  const hasAny = Object.values(products).some(p => Object.keys(p.slots).length > 0);
+  document.getElementById("downloadBtn").disabled = !hasAny;
+}
+
+document.getElementById("downloadBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("downloadStatus");
+  statusEl.textContent = "ZIPを生成中...";
+  statusEl.className = "status loading";
+
+  try {
+    const zip = new JSZip();
+    let fileCount = 0;
+    for (const [jan, data] of Object.entries(products)) {
+      for (const [slotNo, blob] of Object.entries(data.slots)) {
+        zip.file(`${jan}_${slotNo}.png`, blob);
+        fileCount++;
+      }
+    }
+    if (fileCount === 0) {
+      statusEl.textContent = "登録された画像がありません";
+      statusEl.className = "status err";
+      return;
+    }
+    const content = await zip.generateAsync({ type: "blob" });
+    const ts = new Date();
+    const pad = n => String(n).padStart(2, "0");
+    const filename = `product_images_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.zip`;
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(content);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    statusEl.textContent = `${fileCount}枚のPNGをZIPでダウンロードしました`;
+    statusEl.className = "status ok";
+  } catch (e) {
+    statusEl.textContent = "ZIP生成に失敗しました: " + e.message;
+    statusEl.className = "status err";
+  }
+});
+
+function escapeHtml(s) {
+  const div = document.createElement("div");
+  div.textContent = s;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
