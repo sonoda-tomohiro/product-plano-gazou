@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>商品画像キャプチャ → PNG変換ツール</title>
+<title>商品画像・サイズ登録ツール</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
@@ -15,6 +15,7 @@
     --text: #22262b;
     --text-muted: #6b7280;
     --danger: #d64545;
+    --danger-bg: #fdeaea;
     --slot-empty: #f0f2f5;
     --slot-filled: #e7f1ff;
   }
@@ -94,6 +95,35 @@
     display: none;
   }
 
+  /* JAN入力の折りたたみ */
+  .jan-summary {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    cursor: pointer;
+    padding: 6px 10px;
+    background: #eef1f5;
+    border-radius: 6px;
+  }
+  .jan-summary .link { color: var(--accent); text-decoration: underline; }
+
+  /* タブ */
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .tab-btn {
+    padding: 8px 18px;
+    border-radius: 6px 6px 0 0;
+    border: 1px solid var(--border);
+    border-bottom: none;
+    background: #eef1f5;
+    color: var(--text-muted);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .tab-btn.active { background: var(--card-bg); color: var(--accent); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
   .cards { display: flex; flex-direction: column; gap: 14px; }
 
   .card {
@@ -147,39 +177,96 @@
   .slot .paste-flash { animation: flash 0.4s; }
   @keyframes flash { 0% { background: #fff3b0; } 100% { background: var(--slot-filled); } }
 
+  /* サイズ入力テーブル */
+  table.size-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.size-table th, table.size-table td {
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    text-align: left;
+  }
+  table.size-table th { background: #eef1f5; font-weight: 600; }
+  table.size-table td.readonly-cell { background: #fafbfc; color: var(--text-muted); }
+  table.size-table input.size-input {
+    width: 90px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 5px 6px;
+    font-size: 13px;
+    font-family: inherit;
+  }
+  table.size-table input.size-input:focus { border-color: var(--accent); outline: none; }
+  table.size-table input.size-input.cell-error {
+    background: var(--danger-bg);
+    border-color: var(--danger);
+    color: #b3261e;
+  }
+
   footer { margin-top: 24px; }
 </style>
 </head>
 <body>
 
-<h1>商品画像キャプチャ → PNG変換ツール</h1>
-<div class="sub">JANコードを貼り付け、各商品の画像（正面・右・左・上・底・背面）をコピー&amp;ペーストしてZIPでダウンロードします。</div>
+<h1>商品画像・サイズ登録ツール</h1>
+<div class="sub">JANコードを貼り付け、画像（正面・上面・右面・背面・底面・左面）またはサイズ（高さ・幅・奥行）を登録します。</div>
 
 <div class="panel" id="masterPanel">
   <h2>商品マスタ</h2>
   <span id="masterStatus" class="status loading">読み込み中...</span>
 </div>
 
-<div class="panel">
+<div class="panel" id="janPanel">
   <h2>1. JANコードを貼り付け</h2>
-  <textarea id="janInput" placeholder="JANコードを改行区切りで貼り付けてください（最大20件）&#10;例:&#10;4901234567894&#10;4909876543210"></textarea>
-  <div class="row">
-    <button class="primary" id="loadBtn">読み込み</button>
-    <span id="janCount" class="status" style="background:#eef1f5;color:#555;"></span>
+  <div id="janForm">
+    <textarea id="janInput" placeholder="JANコードを改行区切りで貼り付けてください（最大20件）&#10;例:&#10;4901234567894&#10;4909876543210"></textarea>
+    <div class="row">
+      <button class="primary" id="loadBtn">読み込み</button>
+      <span id="janCount" class="status" style="background:#eef1f5;color:#555;"></span>
+    </div>
+    <div class="error-box" id="janError"></div>
   </div>
-  <div class="error-box" id="janError"></div>
-</div>
-
-<div class="panel" id="cardsPanel" style="display:none;">
-  <h2>2. 画像を貼り付け（クリックしてCtrl+V）</h2>
-  <div class="cards" id="cards"></div>
-  <div class="row" style="margin-top:16px;">
-    <button class="primary" id="downloadBtn" disabled>ダウンロード（ZIP）</button>
-    <span id="downloadStatus" class="status" style="background:#eef1f5;color:#555;"></span>
+  <div id="janSummary" class="jan-summary">
+    <span id="janSummaryText"></span>
+    <span class="link">クリックして再編集</span>
   </div>
 </div>
 
-<footer class="sub">正面のみでも登録可能です。ファイル名は「JANコード_番号.png」（1=正面, 2=上面, 3=右面, 20=背面, 21=底面, 22=左面）です。</footer>
+<div class="panel" id="mainPanel" style="display:none;">
+  <div class="tabs">
+    <button class="tab-btn active" id="tabImageBtn">画像入力</button>
+    <button class="tab-btn" id="tabSizeBtn">サイズ入力</button>
+  </div>
+
+  <div class="tab-panel active" id="imagePanel">
+    <h2>画像を貼り付け（クリックしてCtrl+V）</h2>
+    <div class="cards" id="cards"></div>
+    <div class="row" style="margin-top:16px;">
+      <button class="primary" id="downloadBtn" disabled>ダウンロード（ZIP）</button>
+      <span id="downloadStatus" class="status" style="background:#eef1f5;color:#555;"></span>
+    </div>
+  </div>
+
+  <div class="tab-panel" id="sizePanel">
+    <h2>サイズを入力（Excelからコピー&amp;ペースト可）</h2>
+    <table class="size-table" id="sizeTable">
+      <thead>
+        <tr>
+          <th>JANコード</th>
+          <th>商品名</th>
+          <th>高さ(mm)</th>
+          <th>幅(mm)</th>
+          <th>奥行(mm)</th>
+        </tr>
+      </thead>
+      <tbody id="sizeTableBody"></tbody>
+    </table>
+    <div class="row" style="margin-top:16px;">
+      <button class="primary" id="csvDownloadBtn">CSVをダウンロード</button>
+      <span id="csvStatus" class="status" style="background:#eef1f5;color:#555;"></span>
+    </div>
+  </div>
+</div>
+
+<footer class="sub">正面のみでも登録可能です。ファイル名は「JANコード_番号.png」（1=正面, 2=上面, 3=右面, 20=背面, 21=底面, 22=左面）です。サイズ欄は全角数字を自動的に半角へ変換し、数値として読み取れない場合はセルを赤く表示します。</footer>
 
 <script>
 const MASTER_URL = "https://sonoda-tomohiro.github.io/product-plano-gazou/master.json";
@@ -192,9 +279,11 @@ const SLOT_DEFS = [
   { no: 21, label: "底面" },
   { no: 22, label: "左面" },
 ];
+const SIZE_COLS = ["height", "width", "depth"]; // 高さ, 幅, 奥行
 
 let masterMap = null; // normalized jan -> name
-let products = {};     // jan(raw input) -> { name, slots: { 1: blob, ... } }
+let products = {};    // jan(raw入力) -> { name, slots: { no: blob }, size: { height, width, depth } }
+let sizeInputMatrix = []; // [rowIndex][colIndex] -> <input> element
 
 function normalizeJan(jan) {
   const digits = jan.replace(/\D/g, "");
@@ -202,6 +291,19 @@ function normalizeJan(jan) {
   return stripped.length ? stripped : "0";
 }
 
+/* ---------- 全角→半角変換・数値バリデーション ---------- */
+function toHalfWidth(str) {
+  return str
+    .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
+    .replace(/．/g, ".")
+    .replace(/[－ー―]/g, "-");
+}
+function isValidSizeValue(str) {
+  if (str === "") return true; // 未入力はエラー扱いにしない
+  return /^\d+(\.\d+)?$/.test(str);
+}
+
+/* ---------- 商品マスタ読み込み ---------- */
 async function loadMaster() {
   const statusEl = document.getElementById("masterStatus");
   try {
@@ -213,12 +315,13 @@ async function loadMaster() {
     statusEl.className = "status ok";
   } catch (e) {
     masterMap = {};
-    statusEl.textContent = "商品マスタの取得に失敗しました（商品名は表示されません。画像登録は可能です）";
+    statusEl.textContent = "商品マスタの取得に失敗しました（商品名は表示されません。登録は可能です）";
     statusEl.className = "status err";
   }
 }
 loadMaster();
 
+/* ---------- JAN読み込み・折りたたみ ---------- */
 document.getElementById("loadBtn").addEventListener("click", () => {
   const raw = document.getElementById("janInput").value;
   const errorBox = document.getElementById("janError");
@@ -242,18 +345,51 @@ document.getElementById("loadBtn").addEventListener("click", () => {
   document.getElementById("janCount").textContent =
     `${uniqueJans.length}件を読み込みました${dupCount > 0 ? `（重複${dupCount}件を除去）` : ""}`;
 
-  buildCards(uniqueJans);
+  buildProducts(uniqueJans);
+  collapseJanPanel(uniqueJans.length);
+  document.getElementById("mainPanel").style.display = "block";
 });
 
-function buildCards(jans) {
+function collapseJanPanel(count) {
+  document.getElementById("janForm").style.display = "none";
+  const summary = document.getElementById("janSummary");
+  summary.style.display = "flex";
+  document.getElementById("janSummaryText").textContent = `JAN: ${count}件読み込み済み`;
+}
+document.getElementById("janSummary").addEventListener("click", () => {
+  document.getElementById("janSummary").style.display = "none";
+  document.getElementById("janForm").style.display = "block";
+});
+
+/* ---------- タブ切り替え ---------- */
+document.getElementById("tabImageBtn").addEventListener("click", () => switchTab("image"));
+document.getElementById("tabSizeBtn").addEventListener("click", () => switchTab("size"));
+function switchTab(which) {
+  document.getElementById("tabImageBtn").classList.toggle("active", which === "image");
+  document.getElementById("tabSizeBtn").classList.toggle("active", which === "size");
+  document.getElementById("imagePanel").classList.toggle("active", which === "image");
+  document.getElementById("sizePanel").classList.toggle("active", which === "size");
+}
+
+/* ---------- 商品データ構築（画像タブ・サイズタブ共通） ---------- */
+function buildProducts(jans) {
   products = {};
+  jans.forEach(jan => {
+    const norm = normalizeJan(jan);
+    const name = masterMap && masterMap[norm] ? masterMap[norm] : null;
+    products[jan] = { name, slots: {}, size: { height: "", width: "", depth: "" } };
+  });
+  buildImageCards(jans);
+  buildSizeTable(jans);
+}
+
+/* ---------- 画像入力タブ ---------- */
+function buildImageCards(jans) {
   const cardsEl = document.getElementById("cards");
   cardsEl.innerHTML = "";
 
   jans.forEach(jan => {
-    const norm = normalizeJan(jan);
-    const name = masterMap && masterMap[norm] ? masterMap[norm] : null;
-    products[jan] = { name, slots: {} };
+    const name = products[jan].name;
 
     const card = document.createElement("div");
     card.className = "card";
@@ -284,7 +420,6 @@ function buildCards(jans) {
     cardsEl.appendChild(card);
   });
 
-  document.getElementById("cardsPanel").style.display = "block";
   updateDownloadButton();
 }
 
@@ -395,6 +530,129 @@ document.getElementById("downloadBtn").addEventListener("click", async () => {
     statusEl.textContent = "ZIP生成に失敗しました: " + e.message;
     statusEl.className = "status err";
   }
+});
+
+/* ---------- サイズ入力タブ ---------- */
+function buildSizeTable(jans) {
+  const tbody = document.getElementById("sizeTableBody");
+  tbody.innerHTML = "";
+  sizeInputMatrix = [];
+
+  jans.forEach((jan, rowIndex) => {
+    const name = products[jan].name;
+    const tr = document.createElement("tr");
+
+    const janTd = document.createElement("td");
+    janTd.className = "readonly-cell";
+    janTd.textContent = jan;
+    tr.appendChild(janTd);
+
+    const nameTd = document.createElement("td");
+    nameTd.className = "readonly-cell";
+    nameTd.textContent = name || "商品名不明";
+    tr.appendChild(nameTd);
+
+    const rowInputs = [];
+    SIZE_COLS.forEach((colKey, colIndex) => {
+      const td = document.createElement("td");
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "size-input";
+      input.dataset.jan = jan;
+      input.dataset.row = rowIndex;
+      input.dataset.col = colIndex;
+      input.addEventListener("input", onSizeInput);
+      input.addEventListener("paste", onSizePaste);
+      td.appendChild(input);
+      tr.appendChild(td);
+      rowInputs.push(input);
+    });
+    sizeInputMatrix.push(rowInputs);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function applySizeValue(input, rawValue) {
+  const normalized = toHalfWidth(rawValue.trim());
+  input.value = normalized;
+  const valid = isValidSizeValue(normalized);
+  input.classList.toggle("cell-error", !valid);
+
+  const jan = input.dataset.jan;
+  const colKey = SIZE_COLS[Number(input.dataset.col)];
+  if (products[jan]) products[jan].size[colKey] = normalized;
+}
+
+function onSizeInput(e) {
+  const input = e.target;
+  const cursorWasAtEnd = input.selectionStart === input.value.length;
+  applySizeValue(input, input.value);
+  if (cursorWasAtEnd) {
+    const len = input.value.length;
+    input.setSelectionRange(len, len);
+  }
+}
+
+function onSizePaste(e) {
+  const text = (e.clipboardData || window.clipboardData).getData("text/plain") || (e.clipboardData || window.clipboardData).getData("Text");
+  if (!text) return; // 画像等が貼り付けられた場合は何もしない（通常のテキスト貼り付けに任せる）
+  e.preventDefault();
+
+  const rows = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  while (rows.length > 0 && rows[rows.length - 1] === "") rows.pop();
+
+  const startRow = Number(e.target.dataset.row);
+  const startCol = Number(e.target.dataset.col);
+
+  rows.forEach((rowText, i) => {
+    const targetRow = startRow + i;
+    if (targetRow >= sizeInputMatrix.length) return;
+    const cols = rowText.split("\t");
+    cols.forEach((val, j) => {
+      const targetCol = startCol + j;
+      if (targetCol >= SIZE_COLS.length) return;
+      applySizeValue(sizeInputMatrix[targetRow][targetCol], val);
+    });
+  });
+}
+
+document.getElementById("csvDownloadBtn").addEventListener("click", () => {
+  const statusEl = document.getElementById("csvStatus");
+  const jans = Object.keys(products);
+  if (jans.length === 0) {
+    statusEl.textContent = "登録された商品がありません";
+    statusEl.className = "status err";
+    return;
+  }
+
+  const csvEscape = (val) => {
+    const s = String(val ?? "");
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const header = ["JANコード", "商品名", "高さ(mm)", "幅(mm)", "奥行(mm)"];
+  const lines = [header.map(csvEscape).join(",")];
+  jans.forEach(jan => {
+    const p = products[jan];
+    lines.push([jan, p.name || "", p.size.height, p.size.width, p.size.depth].map(csvEscape).join(","));
+  });
+  const csvContent = "﻿" + lines.join("\r\n");
+
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const ts = new Date();
+  const pad = n => String(n).padStart(2, "0");
+  const filename = `product_sizes_${ts.getFullYear()}${pad(ts.getMonth()+1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}${pad(ts.getSeconds())}.csv`;
+
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  statusEl.textContent = "CSVをダウンロードしました";
+  statusEl.className = "status ok";
 });
 
 function escapeHtml(s) {
