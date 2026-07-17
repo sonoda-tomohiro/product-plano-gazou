@@ -201,6 +201,21 @@
     color: #b3261e;
   }
 
+  .form-prompt {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    background: #eef4ff;
+    border: 1px solid #cddcfb;
+    border-radius: 6px;
+    padding: 8px 12px;
+  }
+  .form-prompt a {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: underline;
+  }
+
   footer { margin-top: 24px; }
 </style>
 </head>
@@ -243,6 +258,7 @@
       <button class="primary" id="downloadBtn" disabled>ダウンロード（ZIP）</button>
       <span id="downloadStatus" class="status" style="background:#eef1f5;color:#555;"></span>
     </div>
+    <div class="form-prompt" id="formPromptImage" style="display:none;"></div>
   </div>
 
   <div class="tab-panel" id="sizePanel">
@@ -263,6 +279,7 @@
       <button class="primary" id="csvDownloadBtn">CSVをダウンロード</button>
       <span id="csvStatus" class="status" style="background:#eef1f5;color:#555;"></span>
     </div>
+    <div class="form-prompt" id="formPromptCsv" style="display:none;"></div>
   </div>
 
   <div class="panel" style="margin-top:0;background:#fafbfc;">
@@ -272,6 +289,7 @@
       <button class="primary" id="combinedDownloadBtn">まとめてダウンロード（ZIP）</button>
       <span id="combinedStatus" class="status" style="background:#eef1f5;color:#555;"></span>
     </div>
+    <div class="form-prompt" id="formPromptCombined" style="display:none;"></div>
   </div>
 </div>
 
@@ -289,6 +307,7 @@ const SLOT_DEFS = [
   { no: 22, label: "左面" },
 ];
 const SIZE_COLS = ["height", "width", "depth"]; // 高さ, 幅, 奥行
+const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScuRoZCmG9MfWUhDf4VFxsNA1J6hH-a8WK3Cp0CBqc0eRr5fw/viewform?usp=publish-editor";
 
 let masterMap = null; // normalized jan -> name
 let products = {};    // jan(raw入力) -> { name, slots: { no: blob }, size: { height, width, depth } }
@@ -516,6 +535,11 @@ function triggerDownload(blob, filename) {
   a.click();
   a.remove();
 }
+function showFormPrompt(elId, filename) {
+  const el = document.getElementById(elId);
+  el.innerHTML = `ダウンロードした「${escapeHtml(filename)}」を <a href="${FORM_URL}" target="_blank" rel="noopener">提出フォーム</a> の「ファイルアップロード」欄に添付して提出してください。`;
+  el.style.display = "block";
+}
 function addImageFilesToZip(zip) {
   let fileCount = 0;
   for (const [jan, data] of Object.entries(products)) {
@@ -558,10 +582,12 @@ document.getElementById("downloadBtn").addEventListener("click", async () => {
       return;
     }
     const content = await zip.generateAsync({ type: "blob" });
-    triggerDownload(content, `product_images_${timestampStr()}.zip`);
+    const filename = `product_images_${timestampStr()}.zip`;
+    triggerDownload(content, filename);
 
     statusEl.textContent = `${fileCount}枚のPNGをZIPでダウンロードしました`;
     statusEl.className = "status ok";
+    showFormPrompt("formPromptImage", filename);
   } catch (e) {
     statusEl.textContent = "ZIP生成に失敗しました: " + e.message;
     statusEl.className = "status err";
@@ -592,10 +618,12 @@ document.getElementById("combinedDownloadBtn").addEventListener("click", async (
     }
 
     const content = await zip.generateAsync({ type: "blob" });
-    triggerDownload(content, `product_data_${timestampStr()}.zip`);
+    const filename = `product_data_${timestampStr()}.zip`;
+    triggerDownload(content, filename);
 
     statusEl.textContent = `画像${fileCount}枚 + sizes.csv をZIPでダウンロードしました`;
     statusEl.className = "status ok";
+    showFormPrompt("formPromptCombined", filename);
   } catch (e) {
     statusEl.textContent = "ZIP生成に失敗しました: " + e.message;
     statusEl.className = "status err";
@@ -696,10 +724,12 @@ document.getElementById("csvDownloadBtn").addEventListener("click", () => {
   }
 
   const blob = new Blob([buildSizeCsvString()], { type: "text/csv;charset=utf-8;" });
-  triggerDownload(blob, `product_sizes_${timestampStr()}.csv`);
+  const filename = `product_sizes_${timestampStr()}.csv`;
+  triggerDownload(blob, filename);
 
   statusEl.textContent = "CSVをダウンロードしました";
   statusEl.className = "status ok";
+  showFormPrompt("formPromptCsv", filename);
 });
 
 function escapeHtml(s) {
